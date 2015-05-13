@@ -58,17 +58,18 @@ public class Encoder {
     }
 
     /** Default internal buffer size */
-    public static final int DEFAULT_BUFFER_SIZE = 1024 * 1024;
+    public static final int DEFAULT_BUFFER_SIZE = 5 * 1024 * 1024;
 
     private final int bufSize;
     private final Stream stream;
+    private final Options options;
+    private final Check check;
 
     private final Pointer nextIn;
     private final Pointer nextOut;
     private ByteBuffer input;
-    private ByteBuffer output;
-    private long bytesRead = 0;
-    private long bytesWritten = 0;
+    private long bytesRead;
+    private long bytesWritten;
     private boolean finish = false;
     private boolean finished = false;
     private boolean initialized = true;
@@ -91,10 +92,13 @@ public class Encoder {
 
     public Encoder(Options options, Check check, int internalBufferSize) {
         this.bufSize = internalBufferSize;
+        this.options = options;
+        this.check = check;
         this.stream = new Stream(this.bufSize);
         this.nextIn = this.stream.next_in;
         this.nextOut = this.stream.next_out;
-        CLibrary.lzma_stream_encoder(this.stream, filterChain(options), check.getCode());
+        this.input = null;
+        CLibrary.lzma_stream_encoder(this.stream, filterChain(this.options), this.check.getCode());
     }
 
     public void setInput(byte[] src) {
@@ -187,7 +191,7 @@ public class Encoder {
             ensureReady();
             int availIn = this.input.remaining();
             this.stream.avail_in = new NativeLong(availIn);
-            this.stream.avail_out = new NativeLong(getOutput().remaining());
+            this.stream.avail_out = new NativeLong(this.bufSize);
 
             // Encode
             Return ret = Return.fromCode(CLibrary.lzma_code(stream, action.getCode()));
@@ -195,10 +199,11 @@ public class Encoder {
 
             // TODO: implement sync modes
             if (len < writeSize) {
-                throw new ArrayIndexOutOfBoundsException("insufficient space to write compressed data");
+                throw new ArrayIndexOutOfBoundsException(String.format(
+                        "insufficient space to write compressed data (given %d bytes, needed %d)",
+                        len,
+                        writeSize));
             }
-
-            getOutput().get(dst, offset, writeSize);
 
             // XXX: Since (for the time being) we're expecting to compress all of our input in one
             // shot, there must have been sufficient room in the buffer to accommodate all output.
@@ -206,12 +211,13 @@ public class Encoder {
                 throw new BufferOverflowException();
             }
 
+            this.nextOut.getByteBuffer(0, this.bufSize).get(dst, offset, writeSize);
+
             switch (ret) {
             case OK:
                 throw new IllegalStateException("failed to reach end of stream");
             case STREAM_END:
                 this.finished = true;
-                resetOutput();
                 break;
             default:
                 throw new IOException(ret.getMessage());
@@ -227,8 +233,13 @@ public class Encoder {
     /** Readies the encoder for a new set of input data. */
     public void reset() {
         synchronized (this.stream) {
+            this.finished = false;
+            this.stream.next_in = this.nextIn;
+            this.stream.next_out = this.nextOut;
+            CLibrary.lzma_stream_encoder(this.stream, filterChain(this.options), this.check.getCode());
             this.input = null;
-            resetOutput();
+            this.stream.avail_in = new NativeLong(0);
+            this.stream.avail_out = new NativeLong(this.bufSize);
             this.bytesRead = 0;
             this.bytesWritten = 0;
         }
@@ -261,14 +272,6 @@ public class Encoder {
 
     protected void finalize() {
         end();
-    }
-
-    private void resetOutput() {
-        this.output = null;
-    }
-
-    private ByteBuffer getOutput() {
-        return this.output != null ? this.output : this.nextOut.getByteBuffer(0, this.bufSize);
     }
 
     private void ensureReady() {

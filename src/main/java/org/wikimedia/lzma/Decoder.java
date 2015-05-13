@@ -33,6 +33,8 @@ public class Decoder {
     private final Stream stream;
     private final Pointer nextIn;
     private final Pointer nextOut;
+    private final UnsignedLong memLimit;
+    private final EnumSet<Flags> flags;
 
     private ByteBuffer input;
 
@@ -41,11 +43,13 @@ public class Decoder {
     }
 
     public Decoder(UnsignedLong memLimit, EnumSet<Flags> flags, int bufSize) {
+        this.memLimit = memLimit;
+        this.flags = flags;
         this.bufSize = bufSize;
         this.stream = new Stream(this.bufSize);
         this.nextIn = this.stream.next_in;
         this.nextOut = this.stream.next_out;
-        CLibrary.lzma_stream_decoder(stream, memLimit.longValue(), getFlags(flags));
+        CLibrary.lzma_stream_decoder(stream, this.memLimit.longValue(), getFlags(this.flags));
     }
 
     public void setInput(byte[] src, int offset, int len) {
@@ -72,6 +76,14 @@ public class Decoder {
 
     public void end() {
         CLibrary.lzma_end(this.stream);
+    }
+
+    public void reset() {
+        synchronized (this.stream) {
+            this.stream.next_in = this.nextIn;
+            this.stream.next_out = this.nextOut;
+            CLibrary.lzma_stream_decoder(stream, this.memLimit.longValue(), getFlags(this.flags));
+        }
     }
 
     static int getFlags(EnumSet<Flags> flags) {

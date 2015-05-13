@@ -2,13 +2,12 @@ package org.wikimedia.lzma;
 
 import com.sun.jna.LastErrorException;
 import com.sun.jna.Native;
-import com.sun.jna.Pointer;
 
 public class CLibrary {
 
     static {
         Native.register("lzma");
-        // Native.setProtected(true);
+        Native.setProtected(true);
     }
 
     public static native int lzma_stream_decoder(Stream strm, long memlimit, int flags) throws LastErrorException;
