@@ -1,6 +1,5 @@
 package org.wikimedia.lzma;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.io.IOException;
@@ -74,17 +73,28 @@ public class Encoder {
     private boolean finished = false;
     private boolean initialized = true;
 
-    public Encoder(int preset, Check check) {
-        this(preset, check, DEFAULT_BUFFER_SIZE);
+    public Encoder() {
+        this(6);
     }
 
-    public Encoder(int preset, Check check, int maxBufferSize) {
-        checkArgument(preset >= 0 && preset <= 9, "preset must be between 0-9");
-        this.bufSize = maxBufferSize;
+    public Encoder(int preset) {
+        this(preset, Check.NONE);
+    }
+
+    public Encoder(int preset, Check check) {
+        this(Options.fromPreset(preset), check);
+    }
+
+    public Encoder(Options options, Check check) {
+        this(options, check, DEFAULT_BUFFER_SIZE);
+    }
+
+    public Encoder(Options options, Check check, int internalBufferSize) {
+        this.bufSize = internalBufferSize;
         this.stream = new Stream(this.bufSize);
         this.nextIn = this.stream.next_in;
         this.nextOut = this.stream.next_out;
-        CLibrary.lzma_easy_encoder(this.stream, preset, check.getCode());
+        CLibrary.lzma_stream_encoder(this.stream, filterChain(options), check.getCode());
     }
 
     public void setInput(byte[] src) {
@@ -267,5 +277,17 @@ public class Encoder {
                 throw new IllegalStateException("encoder has been deinitialized (instantiate a new one)");
             }
         }
+    }
+
+    private static Filter filterChain(Options options) {
+        Filter filter = new Filter();
+        filter.id = Filter.IDs.FILTER_X86;
+        filter.options = null;
+        Filter[] filters = (Filter[]) filter.toArray(3);
+        filters[1].id = Filter.IDs.FILTER_LZMA2;
+        filters[1].options = options.getPointer();
+        filters[2].id = Filter.IDs.VLI_UNKNOWN;
+        filters[2].options = null;
+        return filter;
     }
 }

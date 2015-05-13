@@ -2,6 +2,7 @@ package org.wikimedia.lzma;
 
 import com.sun.jna.LastErrorException;
 import com.sun.jna.Native;
+import com.sun.jna.Pointer;
 
 public class CLibrary {
 
@@ -17,5 +18,9 @@ public class CLibrary {
     public static native int lzma_code(Stream strm, int action) throws LastErrorException;
 
     public static native int lzma_easy_encoder(Stream strm, int preset, int check) throws LastErrorException;
+
+    public static native int lzma_stream_encoder(Stream strm, Filter filters, int check) throws LastErrorException;
+
+    public static native boolean lzma_lzma_preset(Options options, int preset) throws LastErrorException;
 
 }
