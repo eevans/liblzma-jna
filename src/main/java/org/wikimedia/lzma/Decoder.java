@@ -38,6 +38,10 @@ public class Decoder {
 
     private ByteBuffer input;
 
+    public Decoder() {
+        this(UnsignedLong.MAX_VALUE, EnumSet.of(Flags.NONE));
+    }
+
     public Decoder(UnsignedLong memLimit, EnumSet<Flags> flags) {
         this(memLimit, flags, Encoder.DEFAULT_BUFFER_SIZE);
     }

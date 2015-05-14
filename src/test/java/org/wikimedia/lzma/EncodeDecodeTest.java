@@ -12,19 +12,16 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.EnumSet;
 
 import org.junit.Test;
-import org.wikimedia.lzma.Decoder.Flags;
 
 import com.google.common.base.Throwables;
-import com.google.common.primitives.UnsignedLong;
 
 public class EncodeDecodeTest {
     @Test
     public void testReuse() throws IOException {
         Encoder compress = new Encoder();
-        Decoder decompress = new Decoder(UnsignedLong.MAX_VALUE, EnumSet.of(Flags.NONE));
+        Decoder decompress = new Decoder();
 
         // Test several round-trip compression/decompression on the same encoder/decoder.
         assertRoundTrip(compress, decompress, "foobar.html");
@@ -51,7 +48,7 @@ public class EncodeDecodeTest {
         assertMagicBytes(output);
 
         // Decode ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        Decoder decompress = new Decoder(UnsignedLong.MAX_VALUE, EnumSet.of(Flags.NONE));
+        Decoder decompress = new Decoder();
         decompress.setInput(output, 0, outputSize);
         byte[] result = new byte[data.length];
         int resultSize = decompress.decode(result, 0, result.length);
