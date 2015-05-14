@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -e
+
+SUPERJAR=target/liblzma-jna-1.0.0-SNAPSHOT.jar
+
+if [ ! -r "$SUPERJAR" ]; then
+    echo "Missing jar (hint: mvn -PsuperJar package)" >&2
+    exit 1
+fi
+
+if [ -n "`which zipgrep`" ]; then
+    pattern="Main-Class: org.wikimedia.lzma.util.Benchmark"
+    if ! zipgrep "$pattern" "$SUPERJAR" META-INF/MANIFEST.MF > /dev/null; then
+        echo "Cannot execute; Build using: mvn -PsuperJar package" >&2
+        exit 1
+    fi
+fi
+
+java -jar "$SUPERJAR" "$@"
