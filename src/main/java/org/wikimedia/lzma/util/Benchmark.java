@@ -9,6 +9,7 @@ import java.util.Iterator;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
+import org.wikimedia.lzma.Decoder;
 import org.wikimedia.lzma.Encoder;
 
 import com.google.common.base.Throwables;
@@ -16,6 +17,10 @@ import com.google.common.base.Throwables;
 public class Benchmark implements AutoCloseable {
 
     static class Config {
+        @Option(name = "-e", aliases = { "--encode" }, usage = "Get encode timings")
+        boolean encode = false;
+        @Option(name = "-d", aliases = { "--decode" }, usage = "Get decode timings")
+        boolean decode = false;
         @Option(name = "-w", aliases = { "--warm-up" }, metaVar = "RUNS", usage = "Warm-up runs to perform")
         int warmUp = 100;
         @Option(name = "-r", aliases = { "--runs" }, metaVar = "RUNS", usage = "Number of runs to perform")
@@ -23,16 +28,24 @@ public class Benchmark implements AutoCloseable {
         @Option(name = "-h", aliases = { "--help" }, help = true, usage = "Print (this) usage synopsis")
         boolean help = false;
 
-        public int getWarmUp() {
+        int getWarmUp() {
             return this.warmUp;
         }
 
-        public int getRuns() {
+        int getRuns() {
             return this.runs;
         }
 
-        public boolean needsHelp() {
+        boolean needsHelp() {
             return this.help;
+        }
+
+        boolean doEncode() {
+            return this.encode;
+        }
+
+        boolean doDecode() {
+            return this.decode;
         }
     }
 
@@ -79,15 +92,15 @@ public class Benchmark implements AutoCloseable {
 
     }
 
-    static class EncodeIterator implements Iterable<Result>, Iterator<Result> {
+    static abstract class AbstractResultIterator implements Iterable<Result>, Iterator<Result> {
 
-        private final Benchmark bench;
+        protected final Benchmark bench;
         private final int runs;
         private int completed = 0;
         private long min, max, sum;
         private boolean isFirst = true;
 
-        EncodeIterator(Benchmark bench, int runs) {
+        AbstractResultIterator(Benchmark bench, int runs) {
             this.runs = runs;
             this.bench = bench;
         }
@@ -95,6 +108,8 @@ public class Benchmark implements AutoCloseable {
         Summary summarize() {
             return new Summary(this.min, this.sum / this.completed, this.max);
         }
+
+        abstract Result getResult() throws IOException;
 
         @Override
         public boolean hasNext() {
@@ -104,7 +119,7 @@ public class Benchmark implements AutoCloseable {
         @Override
         public Result next() {
             try {
-                Result res = this.bench.encode();
+                Result res = getResult();
                 if (this.isFirst) {
                     this.min = this.max = this.sum = res.time;
                     this.isFirst = false;
@@ -138,15 +153,48 @@ public class Benchmark implements AutoCloseable {
 
     }
 
-    private Encoder encoder = new Encoder(1);
-    private byte[] input, buffer;
+    static class EncodeIterator extends AbstractResultIterator {
+        EncodeIterator(Benchmark bench, int runs) {
+            super(bench, runs);
+        }
 
-    Benchmark() throws IOException {
-        this.input = readInput(System.in);
-        this.buffer = new byte[this.input.length];
+        @Override
+        Result getResult() throws IOException {
+            return this.bench.encode();
+        }
+
     }
 
-    void warmUp(int runs) throws IOException {
+    static class DecodeIterator extends AbstractResultIterator {
+        DecodeIterator(Benchmark bench, int runs) {
+            super(bench, runs);
+        }
+
+        @Override
+        Result getResult() throws IOException {
+            return this.bench.decode();
+        }
+
+    }
+
+    private Encoder encoder = new Encoder(1);
+    private Decoder decoder = new Decoder();
+    private byte[] inputBuffer, outputBuffer, compressedBuffer;
+    private int compressedSize;
+
+    Benchmark() throws IOException {
+        this.inputBuffer = readInput(System.in);
+        this.outputBuffer = new byte[this.inputBuffer.length];
+        this.compressedBuffer = new byte[this.inputBuffer.length];
+    }
+
+    void warmUpDecoder(int runs) throws IOException {
+        for (int i = 0; i < runs; i++) {
+            encode();
+        }
+    }
+
+    void warmUpEncoder(int runs) throws IOException {
         for (int i = 0; i < runs; i++) {
             encode();
         }
@@ -156,21 +204,37 @@ public class Benchmark implements AutoCloseable {
         return new EncodeIterator(this, runs);
     }
 
+    DecodeIterator decode(int runs) throws IOException {
+        return new DecodeIterator(this, runs);
+    }
+
     Result encode() throws IOException {
         try {
             long start = System.nanoTime();
-            this.encoder.setInput(input);
+            this.encoder.setInput(inputBuffer);
             this.encoder.finish();
-            int size = this.encoder.encode(this.buffer, 0, this.buffer.length);
-            return new Result(System.nanoTime() - start, size);
+            this.compressedSize = this.encoder.encode(this.compressedBuffer, 0, this.compressedBuffer.length);
+            return new Result(System.nanoTime() - start, this.compressedSize);
         }
         finally {
             this.encoder.reset();
         }
     }
 
+    Result decode() {
+        try {
+            long start = System.nanoTime();
+            this.decoder.setInput(this.compressedBuffer, 0, this.compressedSize);
+            int size = this.decoder.decode(this.outputBuffer, 0, this.outputBuffer.length);
+            return new Result(System.nanoTime() - start, size);
+        }
+        finally {
+            this.decoder.reset();
+        }
+    }
+
     int getInputSize() {
-        return this.input.length;
+        return this.inputBuffer.length;
     }
 
     public void close() {
@@ -215,17 +279,35 @@ public class Benchmark implements AutoCloseable {
             System.exit(0);
         }
 
+        if (!(config.doDecode() || config.doEncode())) {
+            System.err.println("You must supply at least one of -e/--encode or -d/--decode");
+            System.exit(1);
+        }
+
         try (Benchmark bench = new Benchmark()) {
             printf("Uncompressed input size: %d bytes%n", bench.getInputSize());
-            printf("Warming up (%d passes)...%n", config.getWarmUp());
-            bench.warmUp(config.getWarmUp());
-            printf("Compressing...%n");
-            int seq = 0;
-            EncodeIterator results = bench.encode(config.getRuns());
-            for (Result r : results) {
-                printf("%d bytes: seq=%d time=%dns%n", r.size, seq++, r.time);
+            if (config.doEncode()) {
+                printf("Warming up encoder (%d passes)...%n", config.getWarmUp());
+                bench.warmUpEncoder(config.getWarmUp());
+                printf("Compressing...%n");
+                int seq = 0;
+                EncodeIterator results = bench.encode(config.getRuns());
+                for (Result r : results) {
+                    printf("%d bytes: seq=%d time=%dns%n", r.size, seq++, r.time);
+                }
+                System.out.println(results.summarize());
             }
-            System.out.println(results.summarize());
+            if (config.doDecode()) {
+                printf("Warming up decoder (%d passes)...%n", config.getWarmUp());
+                bench.warmUpDecoder(config.getWarmUp());
+                printf("Decompressing...%n");
+                int seq = 0;
+                DecodeIterator results = bench.decode(config.getRuns());
+                for (Result r : results) {
+                    printf("%d bytes: seq=%d time=%dns%n", r.size, seq++, r.time);
+                }
+                System.out.println(results.summarize());
+            }
         }
         System.exit(0);
     }
