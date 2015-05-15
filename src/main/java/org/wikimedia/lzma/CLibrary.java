@@ -7,7 +7,7 @@ public class CLibrary {
 
     static {
         Native.register("lzma");
-        Native.setProtected(true);
+        //Native.setProtected(true);
     }
 
     public static native int lzma_stream_decoder(Stream strm, long memlimit, int flags) throws LastErrorException;

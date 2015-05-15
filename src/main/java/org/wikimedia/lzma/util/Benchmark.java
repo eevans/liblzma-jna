@@ -138,7 +138,7 @@ public class Benchmark implements AutoCloseable {
 
     }
 
-    private Encoder encoder = new Encoder();
+    private Encoder encoder = new Encoder(1);
     private byte[] input, buffer;
 
     Benchmark() throws IOException {
