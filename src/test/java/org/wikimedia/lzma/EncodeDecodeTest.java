@@ -32,28 +32,7 @@ public class EncodeDecodeTest {
 
     @Test
     public void testSimple() throws Exception {
-
-        byte[] data = getTestResourceBytes("barack_obama.html");
-
-        int preset = 1;
-        byte[] output = new byte[data.length];
-        int outputSize;
-
-        // Encode ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        Encoder compress = new Encoder(preset, Check.CRC64);
-        compress.setInput(data);
-        compress.finish();
-        outputSize = compress.encode(output);
-
-        assertMagicBytes(output);
-
-        // Decode ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        Decoder decompress = new Decoder();
-        decompress.setInput(output, 0, outputSize);
-        byte[] result = new byte[data.length];
-        int resultSize = decompress.decode(result, 0, result.length);
-        assertThat(Arrays.copyOf(result, resultSize), equalTo(data));
-
+        assertRoundTrip(new Encoder(), new Decoder(), "barack_obama.html");
     }
 
     private void assertMagicBytes(byte[] data) {

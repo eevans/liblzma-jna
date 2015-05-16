@@ -270,10 +270,6 @@ public class Encoder {
         }
     }
 
-    protected void finalize() {
-        end();
-    }
-
     private void ensureReady() {
         synchronized (this.stream) {
             if (!this.initialized) {
