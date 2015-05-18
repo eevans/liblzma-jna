@@ -2,7 +2,7 @@
 
 set -e
 
-SUPERJAR=target/liblzma-jna-1.0.0-SNAPSHOT.jar
+SUPERJAR=target/lzma-util-1.0.0-SNAPSHOT.jar
 
 if [ ! -r "$SUPERJAR" ]; then
     echo "Missing jar (hint: mvn -PsuperJar package)" >&2
